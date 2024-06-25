@@ -1,0 +1,37 @@
+with purchases as (
+    select b.account_id_prod
+        , cast(created_utc as date) as date
+        , a.purch_status
+        , case when a.purch_status = 'Authorized' then 1 else 0 end as Authorized
+        , case when a.purch_status = 'Declined' then 1 else 0 end as Declined
+        , case when a.purch_status = 'Settled' then 1 else 0 end as Settled
+        , a.decline_reason
+        , left(substring(decline_reason,CHARINDEX('mainExternal',decline_reason)+ 26,1000),len(substring(decline_reason,CHARINDEX('mainExternal',decline_reason)+ 26,1000))-2) as decline_reason_clean
+        , a.amount_usd
+        , a.point_of_sale_type
+        , a.merchant_category_code
+    from dbt.creditcard_purchase_core a
+    left join dbt.creditcard_core b
+        on a.account_id_peach = b.account_id_peach
+)
+
+select date
+    , purch_status
+    , authorized
+    , declined
+    , decline_reason_clean
+    , settled
+    , merchant_category_code
+    , count(distinct account_id_prod) as acct_count
+    , count(*) as transaction_count
+    , sum(amount_usd) as total_amount
+from purchases
+group by date
+    , purch_status
+    , authorized
+    , declined
+    , decline_reason_clean
+    , settled
+    , merchant_category_code
+order by 1,2,3,4,5,6,7
+;
