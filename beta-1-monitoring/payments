@@ -1,0 +1,40 @@
+-- Beta 1 payments & credits
+
+with accounts as (
+    select cast(right(b.external_id, (len(b.external_id) - 3)) as int) as account_id
+        , b.external_id as account_id_full
+        , a.line_of_credit_id
+        , case when cast(right(b.external_id, (len(b.external_id) - 3)) as int) <= 20 then 1 else 0 end as friends_and_family
+        , cast(a.originated_at as date) as account_open_dt
+        , a.id as loan_id
+        -- , a.apr_effective_at_origination as APR
+        -- , a.limit_amount_at_origination/100 as ICL
+        -- , a.*
+        -- , b.*
+    from matillion.peach_loans a
+    left join matillion.peach_loans b
+        on a.line_of_credit_id = b.id
+        and b.type = 'lineOfCredit'
+    where a.loan_type_id = 85
+        and a.type = 'draw'
+        and cast(right(b.external_id, (len(b.external_id) - 3)) as int) is not null
+    -- order by 1
+)
+
+select a.*
+    , b.transaction_type
+    , b.payment_type
+    , b.created_at
+    , b.updated_at
+    , status
+    -- , scheduled_amount
+    , 1.00*scheduled_amount/100 as scheduled_amt
+    , 1.00*actual_amount/100 as actual_amt
+    , 1.00*paid_fees_amount/100 as paid_fees_amt
+    , 1.00*paid_interest_amount/100 as paid_interest_amt
+    , 1.00*paid_principal_amount/100 as paid_principal_amt
+from accounts a
+inner join matillion.peach_transactions b
+    on a.loan_id = b.loan_id
+order by 1
+;
