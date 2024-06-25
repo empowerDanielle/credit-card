@@ -1,0 +1,382 @@
+
+-- Card app data
+
+drop table #Empower_CC_Apps;
+
+-- one row per application
+SELECT distinct d.CreditCardLoanApplicationId
+    , d.UserID --empower user id 
+    -- , null as CardLast4 --placeholder 
+    -- , d.CreditCardLoanApplicationID 
+    , d.createdat as application_ts
+    , cast(d.createdat as date) as application_date
+    , case when d.CreditCardLoanApplicationId <= 40 then 1 else 0 end as f_and_f_flag
+    , d.Status as ApplicationStatusCode 
+    , case when d.Status = 0 then 'Denied'  
+        when d.Status = 1 then 'Created'  
+        when d.Status = 2 then 'Incomplete'  
+        when d.Status = 3 then 'Qualified'  
+        when d.Status = 4 then 'Accepted'  
+        else null end as ApplicationStatus 
+    , case when d.Status = 2 and datediff(day,d.createdat,GETDATE()) >= 30 then 1 else 0 end as incomplete30d
+    , a.creditcardloanid as CardAccountID --credit card account id 
+    , case when a.creditcardloanid is null then null else concat('cc-',a.CreditCardLoanId) end as CardAccountIDFull 
+    , a.ExternalId 
+    , b.DateOfBirth 
+    -- , datediff(day,DateOfBirth,d.createdat) as test
+    , case when datediff(day,DateOfBirth,d.createdat) is null then null 
+            when datediff(day,DateOfBirth,d.createdat) >= 6575 then 1 
+            else 0 end as over18atApp
+    , b.FirstName 
+    , b.LastName  
+    , b.email as EmailAddress 
+    , c.PhoneNumber
+    , b.Location 
+    -- , e.UserAddressId 
+    , f.AddressLine1 
+    , f.AddressLine2 
+    , f.City 
+    , f.State 
+    , f.Zip 
+    , case when f.state in ('AL', 'AK', 'AZ', 'AR', 'DE', 'FL', 'GA', 'HI', 'ID', 'IN', 'KS', 'KY', 'LA', 'MN', 'MS', 'MO', 'MT', 'NV', 'NJ', 'NC', 'ND', 'OH', 'OK', 'PA', 'RI', 'SC', 'TN', 'TX', 'UT', 'VA', 'WA', 'WY') then 1 else 0 end as in_ff_footprint
+    , case when f.state in ('GA','PA','FL','OH','TX') then 1 else 0 end as in_footprint
+    -- , b.SocialSecurityNumber 
+    , case when h.UserCashAdvanceSubscriptionId is not null then 1 else 0 end as cash_advance_flag 
+    , h.cashadvancestatus
+    , case when i.LoanId is not null then 1 else 0 end as thrive_flag 
+    , j.status as kycStatusCode 
+    , case when j.status = 0 then 'NotInitiated'
+        when j.status = 1 then 'DocumentVerification'
+        when j.status = 2 then 'ResubmitAddress'
+        when j.status = 3 then 'ResubmitDocument'
+        when j.status = 4 then 'SubmitSecondaryDocument'
+        when j.status = 5 then 'Accept'
+        when j.status = 6 then 'Review'
+        when j.status = 7 then 'Decline'
+        when j.status = 8 then 'Reject'
+        when j.status = 9 then 'ReviewAccept'
+        when j.status = 10 then 'ReviewReject'
+        else null end as kycStatus
+    , j.CreatedAt as kycCreatedAt
+    , d.UserCreditModelId 
+    -- , k.UserCreditVariableId 
+    -- , k.DateGenerated 
+    , l.UserCreditVariableId
+
+    , l.AccountAge
+    , case when l.AccountAge < 30 then 1 else 0 end as AcctUnder30d
+    , l.AccountBalance
+    , case when l.AccountBalance < -350 then 1 else 0 end as BalUnderNeg350
+    , l.MonthlyIncome
+    , case when l.MonthlyIncome < 1000 then 1 else 0 end as MonthlyIncUnder1k
+    , l.NumRecurringPaychecks
+    , case when l.NumRecurringPaychecks < 3 then 1 else 0 end as Under3Paychecks
+
+    , m.MLModelScore 
+    -- , n.* 
+    , m.UserCreditSummaryId 
+    , o.FicoScore
+    -- , p.ProductExternalId
+    -- , case when p.ProductExternalId is not null then 1 else 0 end
+    -- , q.*
+    -- , q.ProductApplicationRuleResultId
+    , max(case when q.DenialReason = 1 then 1 else 0 end) as denialreason1
+    , max(case when q.DenialReason = 1 then 1 else 0 end) as AcctHistDenial
+    , max(case when q.DenialReason = 2 then 1 else 0 end) as denialreason2
+    , max(case when q.DenialReason = 2 then 1 else 0 end) as TrxnFreqDenial
+    , max(case when q.DenialReason = 3 then 1 else 0 end) as denialreason3
+    , max(case when q.DenialReason = 3 then 1 else 0 end) as CurrentAcctBalDenial
+    , max(case when q.DenialReason = 4 then 1 else 0 end) as denialreason4
+    , max(case when q.DenialReason = 4 then 1 else 0 end) as RecurringPaycheckDenial
+    , max(case when q.DenialReason = 5 then 1 else 0 end) as denialreason5
+    , max(case when q.DenialReason = 5 then 1 else 0 end) as MonthlyIncomeDenial
+    , max(case when q.DenialReason = 6 then 1 else 0 end) as denialreason6
+    , max(case when q.DenialReason = 6 then 1 else 0 end) as BalCushionDenial
+    , max(case when q.DenialReason = 7 then 1 else 0 end) as denialreason7
+    , max(case when q.DenialReason = 7 then 1 else 0 end) as OutsideFootprintDenial
+    , max(case when q.DenialReason = 8 then 1 else 0 end) as denialreason8
+    , max(case when q.DenialReason = 8 then 1 else 0 end) as KYCDenial
+    , max(case when q.DenialReason = 9 then 1 else 0 end) as denialreason9
+    , max(case when q.DenialReason = 9 then 1 else 0 end) as CreditFreezeDenial
+    , max(case when q.DenialReason = 10 then 1 else 0 end) as denialreason10
+    , max(case when q.DenialReason = 10 then 1 else 0 end) as MLADenial
+    , max(case when q.DenialReason = 11 then 1 else 0 end) as denialreason11
+    , max(case when q.DenialReason = 11 then 1 else 0 end) as Incomplete30DDenial
+    , max(case when q.DenialReason = 12 then 12 else 0 end) as denialreason12
+    , max(case when q.DenialReason = 12 then 1 else 0 end) as AriesDenial
+    , max(case when q.DenialReason = 13 then 1 else 0 end) as denialreason13
+    , max(case when q.DenialReason = 13 then 1 else 0 end) as AcctStatusDenial
+    , max(case when q.DenialReason = 14 then 1 else 0 end) as denialreason14
+    , max(case when q.DenialReason = 14 then 1 else 0 end) as FraudAlertDenial
+    , max(case when q.DenialReason = 15 then 1 else 0 end) as denialreason15
+    , max(case when q.DenialReason = 15 then 1 else 0 end) as UnderageDenial
+    , max(case when q.DenialReason = 16 then 1 else 0 end) as denialreason16
+    , max(case when q.DenialReason = 16 then 1 else 0 end) as NoPIIDenial
+    , max(case when q.DenialReason = 17 then 1 else 0 end) as denialreason17
+    , max(case when q.DenialReason = 17 then 1 else 0 end) as PIIMismatchDenial
+    , max(case when q.DenialReason = 18 then 1 else 0 end) as denialreason18
+    , max(case when q.DenialReason = 18 then 1 else 0 end) as UnverifiedAddressDenial
+    , max(case when q.DenialReason = 19 then 1 else 0 end) as denialreason19
+    , max(case when q.DenialReason = 19 then 1 else 0 end) as HighFraudHistDenial
+    , max(case when q.DenialReason = 20 then 1 else 0 end) as denialreason20
+    , max(case when q.DenialReason = 20 then 1 else 0 end) as WatchlistDenial
+    , max(case when q.DenialReason = 21 then 1 else 0 end) as denialreason21
+    , max(case when q.DenialReason = 21 then 1 else 0 end) as IDFailDenial
+    , max(case when q.DenialReason = 22 then 1 else 0 end) as denialreason22
+    , max(case when q.DenialReason = 22 then 1 else 0 end) as TooRecentDenial
+    , max(case when q.DenialReason = 23 then 1 else 0 end) as denialreason23
+    , max(case when q.DenialReason = 23 then 1 else 0 end) as TooManyRecentDenial
+    , max(case when q.DenialReason = 24 then 1 else 0 end) as denialreason24
+    , max(case when q.DenialReason = 24 then 1 else 0 end) as PrevEmpFraudDenial
+    , max(case when q.DenialReason = 25 then 1 else 0 end) as denialreason25
+    , max(case when q.DenialReason = 25 then 1 else 0 end) as PrevChargeoffDenial
+    , max(case when q.DenialReason = 26 then 1 else 0 end) as denialreason26
+    , max(case when q.DenialReason = 26 then 1 else 0 end) as PrevBankruptDenial
+    , max(case when q.DenialReason = 27 then 1 else 0 end) as denialreason27
+    , max(case when q.DenialReason = 27 then 1 else 0 end) as TaurusDenial
+    , max(case when q.DenialReason = 28 then 1 else 0 end) as denialreason28
+    , max(case when q.DenialReason = 28 then 1 else 0 end) as TaurusPrequalDenial
+    , max(case when q.DenialReason = 29 then 1 else 0 end) as denialreason29
+    , max(case when q.DenialReason = 29 then 1 else 0 end) as ActiveCreditAcctDenial
+    , max(case when q.DenialReason = 30 then 1 else 0 end) as denialreason30
+    , max(case when q.DenialReason = 30 then 1 else 0 end) as ActiveCreditAppDenial
+    , max(case when q.DenialReason = 31 then 1 else 0 end) as denialreason31
+    , max(case when q.DenialReason = 31 then 1 else 0 end) as ActiveCADenial
+into #Empower_CC_Apps
+from CreditCardLoanApplications d
+left join CreditCardLoans a
+    on d.creditcardloanapplicationid = a.creditcardloanapplicationid
+left join "User" b
+    on d.userid = b.userid
+-- from CreditCardLoans a --all applications, A/D
+-- left join "User" b 
+--     on a.userid = b.userid
+left join dbo.useridentityphonenumbers c
+    on d.userid = c.useridentityid
+-- left join CreditCardLoanApplications d
+--     on a.creditcardloanapplicationid = d.creditcardloanapplicationid
+-- left join UserLoanApplicationUserAddress e
+--     on d.creditcardloanapplicationid = e.userloanapplicationid
+left join UserAddresses f
+
+    -- join method 1: primary physical address
+    on d.userid = f.userid
+    and "Primary" = 1
+    and f.AddressType = 0
+
+    -- join method 2: useraddressid
+    -- on e.UserAddressId = f.useraddressid
+
+left join usercashadvancesubscription g
+    on d.userid = g.UserId
+left join UserCashAdvance h --***update this
+    on g.UserCashAdvanceSubscriptionId = h.UserCashAdvanceSubscriptionId
+    and d.CreatedAt >= h.AdvanceDate --active at application
+    and d.CreatedAt <= h.RepayDate
+left join Loans i --***update this
+    on d.userid = i.UserId
+left join userkycs j 
+    on d.userid = j.userid
+    and cast(j.CreatedAt as date) <= cast(d.createdat as date) 
+    and cast(j.CreatedAt as date) >= dateadd(day, -30, cast(d.createdat as date))
+-- left join usercreditvariablearies k
+--  on a.userid = k.userid
+left join UserCreditModel l
+    on d.UserCreditModelId = l.UserCreditModelId
+left join UserCreditVariableAries m
+    on l.UserCreditVariableId = m.UserCreditVariableId
+left join UserCreditVariableLithium n
+    on l.UserCreditVariableId = n.UserCreditVariableId
+left join UserCreditSummary o
+    on m.UserCreditSummaryId = o.UserCreditSummaryId
+
+-- denial reasons
+left join ProductApplicationRuleResults p
+    on d.creditcardloanapplicationid = p.ProductExternalId
+left join ProductApplicationDenialReasons q
+    on p.ProductApplicationRuleResultId = q.ProductApplicationRuleResultId 
+    and q.productapplicationruleresultid is not null
+    and q.DenialReason is not null
+
+-- where d.Status != 2 --exclude incomplete apps
+group by d.CreditCardLoanApplicationId
+    , d.UserID --empower user id 
+    , d.createdat
+    , cast(d.createdat as date)
+    , case when d.CreditCardLoanApplicationId <= 40 then 1 else 0 end
+    , d.Status
+    , case when d.Status = 0 then 'Denied'  
+        when d.Status = 1 then 'Created'  
+        when d.Status = 2 then 'Incomplete'  
+        when d.Status = 3 then 'Qualified'  
+        when d.Status = 4 then 'Accepted'  
+        else null end
+    , case when d.Status = 2 and datediff(day,d.createdat,GETDATE()) >= 30 then 1 else 0 end
+    , a.creditcardloanid
+    , case when a.creditcardloanid is null then null else concat('cc-',a.CreditCardLoanId) end
+    , a.ExternalId 
+    , b.DateOfBirth 
+    -- , datediff(day,DateOfBirth,d.createdat) as test
+    , case when datediff(day,DateOfBirth,d.createdat) is null then null 
+            when datediff(day,DateOfBirth,d.createdat) >= 6575 then 1 
+            else 0 end
+    , b.FirstName 
+    , b.LastName  
+    , b.email
+    , c.PhoneNumber
+    , b.Location 
+    -- , e.UserAddressId 
+    , f.AddressLine1 
+    , f.AddressLine2 
+    , f.City 
+    , f.State 
+    , f.Zip 
+    , case when f.state in ('AL', 'AK', 'AZ', 'AR', 'DE', 'FL', 'GA', 'HI', 'ID', 'IN', 'KS', 'KY', 'LA', 'MN', 'MS', 'MO', 'MT', 'NV', 'NJ', 'NC', 'ND', 'OH', 'OK', 'PA', 'RI', 'SC', 'TN', 'TX', 'UT', 'VA', 'WA', 'WY') then 1 else 0 end
+    , case when f.state in ('GA','PA','FL','OH','TX') then 1 else 0 end 
+    -- , b.SocialSecurityNumber 
+    , case when h.UserCashAdvanceSubscriptionId is not null then 1 else 0 end
+    , h.cashadvancestatus
+    , case when i.LoanId is not null then 1 else 0 end
+    , j.status 
+    , case when j.status = 0 then 'NotInitiated'
+        when j.status = 1 then 'DocumentVerification'
+        when j.status = 2 then 'ResubmitAddress'
+        when j.status = 3 then 'ResubmitDocument'
+        when j.status = 4 then 'SubmitSecondaryDocument'
+        when j.status = 5 then 'Accept'
+        when j.status = 6 then 'Review'
+        when j.status = 7 then 'Decline'
+        when j.status = 8 then 'Reject'
+        when j.status = 9 then 'ReviewAccept'
+        when j.status = 10 then 'ReviewReject'
+        else null end
+    , j.CreatedAt
+    , d.UserCreditModelId 
+    -- , k.UserCreditVariableId 
+    -- , k.DateGenerated 
+    , l.UserCreditVariableId 
+    , l.AccountAge
+    , case when l.AccountAge < 30 then 1 else 0 end
+    , l.AccountBalance
+    , case when l.AccountBalance < -350 then 1 else 0 end
+    , l.MonthlyIncome
+    , case when l.MonthlyIncome < 1000 then 1 else 0 end
+    , l.NumRecurringPaychecks
+    , case when l.NumRecurringPaychecks < 3 then 1 else 0 end
+    , m.MLModelScore 
+    -- , n.* 
+    , m.UserCreditSummaryId 
+    , o.FicoScore
+-- order by 1,2
+
+;
+
+/*
+select top 100 *
+from #Empower_CC_Apps
+-- where userid = 9692269
+order by 1;
+*/
+
+-- with denial_reasons as (
+--     select distinct a.* 
+--         , CreditCardLoanApplicationId
+--     from ProductApplicationDenialReasons a
+--     join ProductApplicationRuleResults b 
+--         on a.ProductApplicationRuleResultId = b.ProductApplicationRuleResultId
+--     join CreditCardLoanApplications c 
+--         on b.ProductExternalId = c.CreditCardLoanApplicationId
+-- )
+
+-- select a.*
+--     , b.DenialReason
+-- -- into #Empower_CC_Denial_Reasons
+-- from #Empower_CC_Apps a
+-- left join denial_reasons b
+--     on a.CreditCardLoanApplicationId = b.CreditCardLoanApplicationId
+-- order by 1
+-- ;
+
+with kyc_ranked as (
+    select *
+        , rank() over (partition by CreditCardLoanApplicationID order by kycCreatedAt desc) as kyc_recency_rank
+    from #Empower_CC_Apps
+)
+
+, app_ranked as (
+    select *
+        , rank() over (partition by userid order by application_ts) as app_rank
+    from kyc_ranked
+    where kyc_recency_rank = 1
+)
+
+, apps as (select *
+        , case when app_rank > 1 then 1 else 0 end as repeat_app
+    from app_ranked
+    -- order by 1
+)
+
+, errors as (
+    select *
+
+        -- expectation: no application
+        , case when over18atApp = 0 
+            then 1 else 0 end as UnderageAppError
+        , case when cash_advance_flag = 1 
+            then 1 else 0 end as ActiveCAAppError --***update
+        , case when thrive_flag = 1 
+            then 1 else 0 end as ThriveAppError --***update
+        , case when repeat_app = 1 
+            then 1 else 0 end as RepeatAppError
+
+        --expectation: decline
+        , case when in_footprint = 0 
+                and ApplicationStatus != 'Denied' 
+            then 1 else 0 end as FootprintError
+        , case when in_footprint = 1 
+                and (AcctUnder30d = 1 
+                        or BalUnderNeg350 = 1 
+                        or MonthlyIncUnder1k = 1 
+                        or Under3Paychecks = 1)
+                and ApplicationStatus != 'Denied' 
+            then 1 else 0 end as UCVError 
+        -- , **add credit freeze
+        , case when in_footprint = 1 
+                and AcctUnder30d = 0
+                and BalUnderNeg350 = 0
+                and MonthlyIncUnder1k = 0
+                and Under3Paychecks = 0
+                and MLModelScore > 0.12 
+                and ApplicationStatus != 'Denied'
+            then 1 else 0 end as ModelScoreError
+        -- **add credit report fraud alert
+        , case when in_footprint = 1 
+                and AcctUnder30d = 0
+                and BalUnderNeg350 = 0
+                and MonthlyIncUnder1k = 0
+                and Under3Paychecks = 0
+                and MLModelScore <= 0.12 
+                and kycStatus not in ('Accept','ReviewAccept') 
+                and ApplicationStatus != 'Denied' 
+            then 1 else 0 end as KYCError
+        , case when incomplete30d = 1 and ApplicationStatus != 'Denied' then 1 else 0 end as IncompleteError
+
+        --expectation: approval
+        -- , case when in_footprint = 1 
+        --         and AcctUnder30d = 0
+        --         and BalUnderNeg350 = 0
+        --         and MonthlyIncUnder1k = 0
+        --         and Under3Paychecks = 0
+        --         and MLModelScore <= 0.12 
+        --         and kycStatus not in ('Accept','ReviewAccept') 
+        --         and ApplicationStatus = 'Declined'
+
+    from apps
+) 
+
+select *
+    , case when UnderageAppError + ActiveCAAppError + ThriveAppError + RepeatAppError >= 1 then 1 else 0 end as ApplicationError
+    , case when FootprintError + UCVError + ModelScoreError + KYCError + IncompleteError >= 1 then 1 else 0 end as ExpectedDeclineError
+from errors
+order by 1
+;
