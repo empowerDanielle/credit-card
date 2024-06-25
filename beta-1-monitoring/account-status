@@ -1,0 +1,49 @@
+-- Beta 1 account status monitoring
+
+-- with driver as (
+select cast(right(b.external_id, (len(b.external_id) - 3)) as int) as account_id
+    -- , c.*
+    -- , a.creditcardloanid
+    -- , a.createdat
+    -- , a.userid
+    -- , a.creditcardloanapplicationid
+    -- , case when a.creditcardloanapplicationid <= 40 then 1 else 0 end as f_and_f_flag
+    -- , a.ExternalId
+    -- , b.apr_effective_at_origination as APR
+    -- , b.limit_amount_at_origination/100 as ICL
+    -- , b.limit_amount
+    -- , a.status as statuscode
+    -- , case when a.status = 0 then 'Created'
+    --     when a.status = 1 then 'Active'
+    --     when a.status = 2 then 'Overdue'
+    --     when a.status = 3 then 'Closed'
+    --     when a.status = 4 then 'Declined'
+    --     when a.status = 5 then 'ChargedOff'
+    --     when a.status = 6 then 'Bankruptcy'
+    --     when a.status = 7 then 'PendingClosure'
+    --     when a.status = 8 then 'PendingClosureOverdue'
+    --     else null end as status
+    -- , case when a.status = 0 then 1 else 0 end as CreatedFlag
+    -- , case when a.status = 1 then 1 else 0 end as ActiveFlag
+    -- , case when a.status = 2 then 1 else 0 end as OverdueFlag
+    -- , case when a.status = 3 then 1 else 0 end as ClosedFlag
+    -- , case when a.status = 4 then 1 else 0 end as DeclinedFlag
+    -- , case when a.status = 5 then 1 else 0 end as ChargedOffFlag
+    -- , case when a.status = 6 then 1 else 0 end as BankruptcyFlag
+    -- , case when a.status = 7 then 1 else 0 end as PendingClosureFlag
+    -- , case when a.status = 8 then 1 else 0 end as PendingClosureOverdueFlag
+    -- , a.chargeoffstatus
+    -- , a.closereason
+from matillion.peach_loans a
+left join matillion.peach_loans b
+    on a.line_of_credit_id = b.id
+    and b.type = 'lineOfCredit'
+-- left join matillion.prod_CreditCardLoans c
+--     on cast(right(b.external_id, (len(b.external_id) - 3)) as int) = c.
+where a.loan_type_id = 85
+    and a.type = 'draw'
+    and cast(right(b.external_id, (len(b.external_id) - 3)) as int) is not null
+    and a.id is not null
+order by 1
+-- )
+;
