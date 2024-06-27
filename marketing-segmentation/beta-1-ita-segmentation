@@ -1,7 +1,7 @@
 -- marketing funnel - beta 1 ITA
 
 --Empower users who have been with Empower for >= 6 months and whose sub is currently active
-drop table #Empower_Subs;
+-- drop table #Empower_Subs;
 
 with driver as (
     select distinct a.userid
@@ -49,7 +49,7 @@ select count(*), count(distinct userid) from #Empower_Subs; --849k (6m active) |
 
 
 --Has never had a Thrive account
-drop table #not_thrive_users;
+-- drop table #not_thrive_users;
 
 select a.*
 into #not_thrive_users 
@@ -65,7 +65,7 @@ select count(*), count(distinct userid) from #not_thrive_users; --631k (6m activ
 --Passes CP
 
 --Model score < 0.1 (actual cutoff 0.12)
-drop table #AriesPQPasses;
+-- drop table #AriesPQPasses;
 
 select a.*
     , b.usercreditvariableid
@@ -102,7 +102,7 @@ select top 100 * from #AriesPQPasses;
 select count(*), count(distinct userid) from #AriesPQPasses; --114k (6m active) | 122k (5m) | 132k (4m) | 139k (3m) | 152k (0.105 cutoff)
 
 -- user credit variables pass
-drop table #ucv_pass;
+-- drop table #ucv_pass;
 
 -- **add 3+ recurring paychecks
 select a.*
@@ -176,7 +176,7 @@ select count(*), count(distinct userid) from #ucv_pass; --98k (6m active) | 105k
 
 
 -- limit to 5 states
-drop table #in_footprint;
+-- drop table #in_footprint;
 
 select distinct a.*
     -- , b.STATE
@@ -196,3 +196,44 @@ select top 100 * from #in_footprint;-- where userid = 146437;
 select count(*), count(distinct userid) from #in_footprint; --3,900 (6m active) | 4,127 (5m) | 4,387 (4m) | 4,558 (3m) | 5,035 (0.105 cutoff)
 
 -- select top 100 userid, count(*) from #in_footprint group by userid order by 2 desc;
+
+-- check cash advance status
+--select top 100 * from matillion.prod_usercashadvance
+--select distinct cashadvancestatus from matillion.prod_usercashadvance
+-- select top 100 * from matillion.prod_usercashadvancesubscription where usersubscriptionid = ;
+
+-- cash advance status
+
+with driver as (
+    select a.*
+        , c.cashadvancestatus
+        , c.advancedate
+        , c.repaydate
+        , case when c.cashadvancestatus = 0 then 'Created' --default state
+            when c.cashadvancestatus = 1 then 'Active' --disbursement successful
+            when c.cashadvancestatus = 2 then 'Repaid' --repayment successful
+            when c.cashadvancestatus = 3 then 'Defaulted' --after unable to collect 180d
+            when c.cashadvancestatus = 4 then 'Late' --unable to collect
+            when c.cashadvancestatus = 5 then 'Repaying' --pending payment
+            when c.cashadvancestatus = 6 then 'Unable to Advance' --disbursement failed
+            when c.cashadvancestatus = 7 then 'Pending' --pending disbursement
+            when c.cashadvancestatus = 8 then 'Unable to Collect' --collection failure
+            else 'Never had CA' end as ca_status --not in cash advance table
+        , rank() over (partition by a.userid order by advancedate desc) as recency_rank
+    -- into #cash_advance_status
+    from #in_footprint a
+    left join matillion.prod_usercashadvancesubscription b
+        on a.userid = b.userid
+    left join matillion.prod_usercashadvance c
+        on b.usercashadvancesubscriptionid = c.usercashadvancesubscriptionid
+)
+
+select --cashadvancestatus
+    -- , 
+    ca_status
+    , count(*) as count
+from driver
+where recency_rank = 1
+group by-- cashadvancestatus, 
+    ca_status
+order by 2 desc
