@@ -40,8 +40,8 @@ from driver
 where subscription_recency = 1
 ;
 
-select top 100 * from #Empower_Subs;
-select count(*), count(distinct userid) from #Empower_Subs; --849k (6m active) | 928K (5m) |  1.0M (4m) | 1.1M (3m)
+-- select top 100 * from #Empower_Subs;
+-- select count(*), count(distinct userid) from #Empower_Subs; --849k (6m active) | 928K (5m) |  1.0M (4m) | 1.1M (3m)
 
 -- select top 10 userid, count(*) from #Empower_Subs group by userid order by 2 desc;
 -- select top 10 * from #Empower_Subs where userid = 6873308;
@@ -58,8 +58,8 @@ where userid not in (select userid
                         from matillion.prod_loans) --never had a Thrive account
 ;
 
-select top 100 * from #not_thrive_users;
-select count(*), count(distinct userid) from #not_thrive_users; --631k (6m active) | 686k (5m) | 746k (4m) | 805k (3m)
+-- select top 100 * from #not_thrive_users;
+-- select count(*), count(distinct userid) from #not_thrive_users; --631k (6m active) | 686k (5m) | 746k (4m) | 805k (3m)
 
 
 --Passes CP
@@ -98,8 +98,8 @@ where score_rank = 1
 -- where userid = 1046851
 --     and dategenerated >= '2024-04-01';
 
-select top 100 * from #AriesPQPasses;
-select count(*), count(distinct userid) from #AriesPQPasses; --114k (6m active) | 122k (5m) | 132k (4m) | 139k (3m) | 152k (0.105 cutoff)
+-- select top 100 * from #AriesPQPasses;
+-- select count(*), count(distinct userid) from #AriesPQPasses; --114k (6m active) | 122k (5m) | 132k (4m) | 139k (3m) | 152k (0.105 cutoff)
 
 -- user credit variables pass
 -- drop table #ucv_pass;
@@ -140,8 +140,8 @@ where b.most_recent_flag = 1
     and TotalHistoryInDays >= 30
 ;
 
-select top 100 * from #ucv_pass;
-select count(*), count(distinct userid) from #ucv_pass; --98k (6m active) | 105k (5m) | 113k (4m) | 119k (3m) | 129k (0.105 cutoff)
+-- select top 100 * from #ucv_pass;
+-- select count(*), count(distinct userid) from #ucv_pass; --98k (6m active) | 105k (5m) | 113k (4m) | 119k (3m) | 129k (0.105 cutoff)
 -- select top 30 cast(createdat as date), count(*) from #ucv_pass group by cast(createdat as date) order by 1;
 
 -- select top 100 * from matillion.prod_usercreditmodel;
@@ -192,8 +192,8 @@ inner join matillion.prod_useraddresses b
     and b.addresstype = 0
 ;
 
-select top 100 * from #in_footprint;-- where userid = 146437;
-select count(*), count(distinct userid) from #in_footprint; --3,900 (6m active) | 4,127 (5m) | 4,387 (4m) | 4,558 (3m) | 5,035 (0.105 cutoff)
+-- select top 100 * from #in_footprint;-- where userid = 146437;
+-- select count(*), count(distinct userid) from #in_footprint; --3,900 (6m active) | 4,127 (5m) | 4,387 (4m) | 4,558 (3m) | 5,035 (0.105 cutoff)
 
 -- select top 100 userid, count(*) from #in_footprint group by userid order by 2 desc;
 
@@ -204,6 +204,7 @@ select count(*), count(distinct userid) from #in_footprint; --3,900 (6m active) 
 
 -- cash advance status
 
+-- remove late & charged off CA users
 with driver as (
     select a.*
         , c.cashadvancestatus
@@ -228,12 +229,18 @@ with driver as (
         on b.usercashadvancesubscriptionid = c.usercashadvancesubscriptionid
 )
 
-select --cashadvancestatus
+select *--cashadvancestatus
     -- , 
-    ca_status
-    , count(*) as count
+    -- ca_status
+    -- , count(*) as count
+into #final
 from driver
 where recency_rank = 1
-group by-- cashadvancestatus, 
-    ca_status
-order by 2 desc
+    and ca_status not in ('Late','Defaulted')
+-- group by-- cashadvancestatus, 
+    -- ca_status
+-- order by 2 desc
+
+-- select count(*), count(distinct userid) from #final; --4,965
+
+-- select top 100 * from dbt.ca_core;
