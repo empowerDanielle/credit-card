@@ -10,7 +10,7 @@ SELECT distinct d.CreditCardLoanApplicationId
     -- , d.CreditCardLoanApplicationID 
     , d.createdat as application_ts
     , cast(d.createdat as date) as application_date
-    , case when d.CreditCardLoanApplicationId <= 40 then 1 else 0 end as f_and_f_flag
+    , case when d.CreditCardLoanApplicationId <= 55 then 1 else 0 end as f_and_f_flag
     , d.Status as ApplicationStatusCode 
     , case when d.Status = 0 then 'Denied'  
         when d.Status = 1 then 'Created'  
@@ -31,6 +31,13 @@ SELECT distinct d.CreditCardLoanApplicationId
     , b.LastName  
     , b.email as EmailAddress 
     , c.PhoneNumber
+    , c.IsPrimary as IsPrimaryPhone
+    , c.UserIdentityPhoneNumberId
+    , c.[Type] as PhoneType
+    , case when c.[Type] = 'mobile' then 1
+        when c.[Type] = 'home' then 2
+        when c.[Type] = 'work' then 3
+        else 4 end as phoneTypeCode
     , b.Location 
     -- , e.UserAddressId 
     , f.AddressLine1 
@@ -169,7 +176,7 @@ left join UserAddresses f
 
 left join usercashadvancesubscription g
     on d.userid = g.UserId
-left join UserCashAdvance h --***update this
+left join UserCashAdvance h --***update this to get actual repayment date
     on g.UserCashAdvanceSubscriptionId = h.UserCashAdvanceSubscriptionId
     and d.CreatedAt >= h.AdvanceDate --active at application
     and d.CreatedAt <= h.RepayDate
@@ -224,6 +231,13 @@ group by d.CreditCardLoanApplicationId
     , b.LastName  
     , b.email
     , c.PhoneNumber
+    , c.IsPrimary
+    , c.UserIdentityPhoneNumberId
+    , c.[Type]
+    , case when c.[Type] = 'mobile' then 1
+        when c.[Type] = 'home' then 2
+        when c.[Type] = 'work' then 3
+        else 4 end
     , b.Location 
     -- , e.UserAddressId 
     , f.AddressLine1 
@@ -303,11 +317,18 @@ with kyc_ranked as (
     from #Empower_CC_Apps
 )
 
+, phones_ranked as (
+    select *
+        , rank() over (partition by CreditCardLoanApplicationID order by isprimaryphone desc, phoneTypeCode asc, UserIdentityPhoneNumberId desc) as phone_rank
+    from kyc_ranked
+    where kyc_recency_rank = 1
+)
+
 , app_ranked as (
     select *
         , rank() over (partition by userid order by application_ts) as app_rank
-    from kyc_ranked
-    where kyc_recency_rank = 1
+    from phones_ranked
+    where phone_rank = 1
 )
 
 , apps as (select *
@@ -317,7 +338,7 @@ with kyc_ranked as (
 )
 
 , errors as (
-    select *
+    select distinct *
 
         -- expectation: no application
         , case when over18atApp = 0 
@@ -356,12 +377,12 @@ with kyc_ranked as (
                 and MonthlyIncUnder1k = 0
                 and Under3Paychecks = 0
                 and MLModelScore <= 0.12 
-                and kycStatus not in ('Accept','ReviewAccept') 
+                and kycStatus not in ('Accept','ReviewAccept','DocumentVerification') 
                 and ApplicationStatus != 'Denied' 
             then 1 else 0 end as KYCError
         , case when incomplete30d = 1 and ApplicationStatus != 'Denied' then 1 else 0 end as IncompleteError
 
-        --expectation: approval
+        --expectation: approval **update for unexp. declines
         -- , case when in_footprint = 1 
         --         and AcctUnder30d = 0
         --         and BalUnderNeg350 = 0
@@ -374,9 +395,359 @@ with kyc_ranked as (
     from apps
 ) 
 
-select *
+select distinct CreditCardLoanApplicationId
+    , UserId
+    -- , application_ts
+    , application_date
+    , f_and_f_flag
+    , ApplicationStatusCode
+    , ApplicationStatus
+    , case when applicationstatus = 'Accepted' then 1 else 0 end as acceptedFlag
+    , case when applicationstatus = 'Incomplete' then 1 else 0 end as incompleteFlag
+    , case when applicationstatus = 'Denied' then 1 else 0 end as DeniedFlag
+    , incomplete30d
+    , CardAccountID
+    , CardAccountIDFull
+    , ExternalId
+    , DateOfBirth
+    , over18atApp
+    , FirstName
+    , LastName
+    , EmailAddress
+    , PhoneNumber--****
+    , [Location]
+    , AddressLine1
+    , AddressLine2
+    , City
+    , [State]
+    , Zip
+    , in_ff_footprint
+    , in_footprint
+    , cash_advance_flag
+    , CashAdvanceStatus
+    , thrive_flag
+    , kycStatusCode
+    , kycStatus
+    , kycCreatedAt
+    , UserCreditModelId
+    , UserCreditVariableId
+    , AccountAge
+    , AcctUnder30d
+    , AccountBalance
+    , BalUnderNeg350
+    , MonthlyIncome
+    , MonthlyIncUnder1k
+    , NumRecurringPaychecks
+    , Under3Paychecks
+    , MLModelScore
+    , UserCreditSummaryId
+    , FicoScore
+    , denialreason1
+    , AcctHistDenial
+    , denialreason2
+    , TrxnFreqDenial
+    , denialreason3
+    , CurrentAcctBalDenial
+    , denialreason4
+    , RecurringPaycheckDenial
+    , denialreason5
+    , MonthlyIncomeDenial
+    , denialreason6
+    , BalCushionDenial
+    , denialreason7
+    , OutsideFootprintDenial
+    , denialreason8
+    , KYCDenial
+    , denialreason9
+    , CreditFreezeDenial
+    , denialreason10
+    , MLADenial
+    , denialreason11
+    , Incomplete30DDenial
+    , denialreason12
+    , AriesDenial
+    , denialreason13
+    , AcctStatusDenial
+    , denialreason14
+    , FraudAlertDenial
+    , denialreason15
+    , UnderageDenial
+    , denialreason16
+    , NoPIIDenial
+    , denialreason17
+    , PIIMismatchDenial
+    , denialreason18
+    , UnverifiedAddressDenial
+    , denialreason19
+    , HighFraudHistDenial
+    , denialreason20
+    , WatchlistDenial
+    , denialreason21
+    , IDFailDenial
+    , denialreason22
+    , TooRecentDenial
+    , denialreason23
+    , TooManyRecentDenial
+    , denialreason24
+    , PrevEmpFraudDenial
+    , denialreason25
+    , PrevChargeoffDenial
+    , denialreason26
+    , PrevBankruptDenial
+    , denialreason27
+    , TaurusDenial
+    , denialreason28
+    , TaurusPrequalDenial
+    , denialreason29
+    , ActiveCreditAcctDenial
+    , denialreason30
+    , ActiveCreditAppDenial
+    , denialreason31
+    , ActiveCADenial
+    , kyc_recency_rank
+    , app_rank
+    , repeat_app
+    , UnderageAppError
+    , ActiveCAAppError
+    , ThriveAppError
+    , RepeatAppError
+    , FootprintError
+    , UCVError
+    , ModelScoreError
+    , KYCError
+    , IncompleteError
     , case when UnderageAppError + ActiveCAAppError + ThriveAppError + RepeatAppError >= 1 then 1 else 0 end as ApplicationError
     , case when FootprintError + UCVError + ModelScoreError + KYCError + IncompleteError >= 1 then 1 else 0 end as ExpectedDeclineError
 from errors
+-- group by CreditCardLoanApplicationId
+--     , UserId
+--     -- , application_ts
+--     , application_date
+--     , f_and_f_flag
+--     , ApplicationStatusCode
+--     , ApplicationStatus
+--     , incomplete30d
+--     , CardAccountID
+--     , CardAccountIDFull
+--     , ExternalId
+--     , DateOfBirth
+--     , over18atApp
+--     , FirstName
+--     , LastName
+--     , EmailAddress
+--     , PhoneNumber
+--     , [Location]
+--     , AddressLine1
+--     , AddressLine2
+--     , City
+--     , [State]
+--     , Zip
+--     , in_ff_footprint
+--     , in_footprint
+--     , cash_advance_flag
+--     , CashAdvanceStatus
+--     , thrive_flag
+--     , kycStatusCode
+--     , kycStatus
+--     , kycCreatedAt
+--     , UserCreditModelId
+--     , UserCreditVariableId
+--     , AccountAge
+--     , AcctUnder30d
+--     , AccountBalance
+--     , BalUnderNeg350
+--     , MonthlyIncome
+--     , MonthlyIncUnder1k
+--     , NumRecurringPaychecks
+--     , Under3Paychecks
+--     , MLModelScore
+--     , UserCreditSummaryId
+--     , FicoScore
+--     , denialreason1
+--     , AcctHistDenial
+--     , denialreason2
+--     , TrxnFreqDenial
+--     , denialreason3
+--     , CurrentAcctBalDenial
+--     , denialreason4
+--     , RecurringPaycheckDenial
+--     , denialreason5
+--     , MonthlyIncomeDenial
+--     , denialreason6
+--     , BalCushionDenial
+--     , denialreason7
+--     , OutsideFootprintDenial
+--     , denialreason8
+--     , KYCDenial
+--     , denialreason9
+--     , CreditFreezeDenial
+--     , denialreason10
+--     , MLADenial
+--     , denialreason11
+--     , Incomplete30DDenial
+--     , denialreason12
+--     , AriesDenial
+--     , denialreason13
+--     , AcctStatusDenial
+--     , denialreason14
+--     , FraudAlertDenial
+--     , denialreason15
+--     , UnderageDenial
+--     , denialreason16
+--     , NoPIIDenial
+--     , denialreason17
+--     , PIIMismatchDenial
+--     , denialreason18
+--     , UnverifiedAddressDenial
+--     , denialreason19
+--     , HighFraudHistDenial
+--     , denialreason20
+--     , WatchlistDenial
+--     , denialreason21
+--     , IDFailDenial
+--     , denialreason22
+--     , TooRecentDenial
+--     , denialreason23
+--     , TooManyRecentDenial
+--     , denialreason24
+--     , PrevEmpFraudDenial
+--     , denialreason25
+--     , PrevChargeoffDenial
+--     , denialreason26
+--     , PrevBankruptDenial
+--     , denialreason27
+--     , TaurusDenial
+--     , denialreason28
+--     , TaurusPrequalDenial
+--     , denialreason29
+--     , ActiveCreditAcctDenial
+--     , denialreason30
+--     , ActiveCreditAppDenial
+--     , denialreason31
+--     , ActiveCADenial
+--     , kyc_recency_rank
+--     , app_rank
+--     , repeat_app
+--     , UnderageAppError
+--     , ActiveCAAppError
+--     , ThriveAppError
+--     , RepeatAppError
+--     , FootprintError
+--     , UCVError
+--     , ModelScoreError
+--     , KYCError
+--     , IncompleteError
+--     , case when UnderageAppError + ActiveCAAppError + ThriveAppError + RepeatAppError >= 1 then 1 else 0 end
+--     , case when FootprintError + UCVError + ModelScoreError + KYCError + IncompleteError >= 1 then 1 else 0 end
+where f_and_f_flag = 0
 order by 1
 ;
+
+
+
+select l.*
+    , m.UserCreditModelId
+    , m.UserCreditVariableId
+    , a.*
+from CreditCardLoanApplications l
+left join UserCreditModel m
+on l.UserCreditModelId = m.UserCreditModelId
+left join UserCreditVariableAries a
+on m.UserCreditVariableId = a.UserCreditVariableId
+left join UserCreditSummary s 
+on a.UserCreditSummaryId = s.UserCreditSummaryId
+where l.UserId = 9692269;
+
+-- date functions
+select dateadd(day, -30, cast('2023-01-01' as date));
+select GETDATE(); -- EST + 4 hours
+
+-- CC APPS & ACCOUNTS
+select top 100 * from creditcardloans where userid = 9692269; 
+select top 100 * from CreditCardLoanApplications order by 1 where userid = 9692269;  --createdat != modifiedat --creditcardloanapplication id 18-20 --18 declined
+select top 100 * from ProductApplicationRuleResults where ProductExternalId = 18; --productapplicationruleresultid 20291-20294 (declined)
+select top 100 * from ProductApplicationDenialReasons where productapplicationruleresultid = 20294; --denialreasons 4,12  --where userid = 9692269 --productapplicationdenialreasonid, productapplicationruleresultid, denialreason
+select distinct denialreason from ProductApplicationDenialReasons order by 1; --19
+select cast(createdatutc as date) as date, count(*) from ProductApplicationDenialReasons group by cast(createdatutc as date) order by 1;
+select top 100 * from CreditCardLoanApplicationDisclosures; 
+select top 100 * from CreditCardLoanexternaldata; 
+
+select * 
+from ProductApplicationDenialReasons a
+join ProductApplicationRuleResults b 
+    on a.ProductApplicationRuleResultId = b.ProductApplicationRuleResultId
+join CreditCardLoanApplications c 
+    on b.ProductExternalId = c.CreditCardLoanApplicationId
+where c.UserId = 9692269;
+
+
+
+-- PII
+select UserIdentityId, count(*) from useridentityphonenumbers where isprimary = 1 group by UserIdentityId order by 2 desc
+select top 100 * from useridentityphonenumbers where UserIdentityId = 4477483
+select top 100 * from useridentityphonenumbers where UserIdentityId = 6735961
+select top 100 * from UserLoanApplicationUserAddress; --userloanapplicationid--useraddressid
+select top 100 * from useraddresses; --select count(*) from useraddresses --2250444--select count(distinct useraddressid) from useraddresses --2250445
+
+
+-- CASH ADVANCE
+select top 100 * from UserCashAdvance where usercashadvancesubscriptionid = 4291981; --charles (17-28) 5604164;--erich 5837952; --usercashadvancesubscriptionid, usercashadvanceid, accountid
+select top 100 * from usercashadvanceeligibility; 
+select top 100 * from usercashadvancesubscription where userid = 7342705 ; 9692269;  --usercashadvancesubscriptionid, userid
+
+-- THRIVE 
+select top 100 * from UserLoanApplications order by createdat desc; 
+select * from userloanapplications where userid = 9692269; --userloanapplicationid
+select top 100 * from loans; --select distinct status from loans order by 1
+select top 100 * from userloanapplicationdenialreasons;  --where userloanapplicationid = 18
+
+
+--CREDIT SUMMARY
+
+--GENERAL:
+select top 100 * from dbo.usercreditsummary; --usercreditsummaryid, usercreditreportid, ficoscore
+select top 100 * from dbo.usercreditsummaryaccountsummarydetail; --usercreditsummaryid, paymenthistorystartdate
+select top 100 * from dbo.usercreditsummaryrecordcounts; --number trade lines by type --usercreditsummaryid
+
+-- AMOUNTS:
+select top 100 * from dbo.usercreditsummaryinstallmentamount;
+select top 100 * from dbo.usercreditsummarymostrecentdelinquency;
+select top 100 * from dbo.usercreditsummaryrevolvingamount;
+select top 100 * from dbo.usercreditsummarytotalamount;
+
+--???
+select top 100 * from dbo.usercreditsummaryaddonproducts;
+
+
+-- KYC
+select top 100 * from userkycs where userid = 9215203; 9692269;
+select top 100 * from userkycuserloanapplication; --userkycuserloanapplicationid, userkycid, userloanapplicationid
+
+
+-- MODEL
+select top 100 * from usercreditmodel where userid = 9692269;
+select top 100 * from usercreditvariablearies where usercreditvariableid in (1481661627, 1526622804, 1526623908);  --= 1526623908 --usercreditvariableid
+select top 100 * from usercreditvariablemlscore; --usercreditvariablemlscoreid, usercreditvariableid
+select top 100 * from usercreditvariablelithium where userid = 9692269 order by 3 desc; --usercreditvariablelithiumid, usercreditvariableid
+select top 100 * from matillion.prod_userpaychecks where userid = 9692269;
+
+select * from ProductApplicationDenialReasons padr
+join ProductApplicationRuleResults parr on padr.ProductApplicationRuleResultId = parr.ProductApplicationRuleResultId
+join CreditCardLoanApplications ccla on ccla.CreditCardLoanApplicationId = parr.ProductExternalId
+where ccla.UserId = 9692269;
+
+select * 
+from ProductApplicationDenialReasons a
+left join ProductApplicationRuleResults b 
+    on a.ProductApplicationRuleResultId = b.ProductApplicationRuleResultId
+left join CreditCardLoanApplications c 
+    on b.ProductExternalId = c.CreditCardLoanApplicationId
+where c.UserId = 9692269;
+
+select *
+from ProductApplicationRuleResults
+where productexternalid = 18;
+
+select top 100 *
+from ProductApplicationDenialReasons;
+
